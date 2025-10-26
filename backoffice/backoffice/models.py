@@ -37,9 +37,14 @@ class ProxyPool(models.Model):
     ip_address = models.CharField(max_length=255)
     port = models.IntegerField()
 
+    # Old fields from migration 0004 (kept for backward compatibility)
     scheme = models.PositiveSmallIntegerField(choices=PROXY_SCHEMES, default=0)
-    username = models.CharField(max_length=89)
-    password = models.CharField(max_length=66)
+    username = models.CharField(max_length=89, blank=True, default='')
+    password = models.CharField(max_length=66, blank=True, default='')
+
+    # Auth for original proxy (squid, etc) - new fields for Gateway
+    proxy_username = models.CharField(max_length=255, blank=True, default='', help_text="Username for original proxy auth")
+    proxy_password = models.CharField(max_length=255, blank=True, default='', help_text="Password for original proxy auth")
 
     country = models.CharField(max_length=10, blank=True)
     city = models.CharField(max_length=100, blank=True)

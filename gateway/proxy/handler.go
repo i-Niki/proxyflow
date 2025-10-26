@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net"
@@ -107,7 +108,18 @@ func (h *Handler) HandleConnection(clientConn net.Conn) {
 	log.Printf("INFO: Connected to original proxy %s", proxyAddr)
 
 	// Send CONNECT request to original proxy
-	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", targetHost, targetHost)
+	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", targetHost, targetHost)
+
+	// Add Proxy-Authorization if original proxy requires auth
+	if allocation.ProxyUsername != "" && allocation.ProxyPassword != "" {
+		proxyAuth := fmt.Sprintf("%s:%s", allocation.ProxyUsername, allocation.ProxyPassword)
+		proxyAuthEncoded := base64.StdEncoding.EncodeToString([]byte(proxyAuth))
+		connectReq += fmt.Sprintf("Proxy-Authorization: Basic %s\r\n", proxyAuthEncoded)
+		log.Printf("DEBUG: Added Proxy-Authorization for original proxy (user=%s)", allocation.ProxyUsername)
+	}
+
+	connectReq += "\r\n"
+
 	if _, err := targetConn.Write([]byte(connectReq)); err != nil {
 		log.Printf("ERROR: Failed to send CONNECT to proxy: %v", err)
 		h.sendError(clientConn, "502 Bad Gateway")

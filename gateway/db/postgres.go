@@ -15,6 +15,8 @@ type ProxyAllocation struct {
 	GatewayPort     int
 	ProxyIP         string
 	ProxyPort       int
+	ProxyUsername   string  // Auth for original proxy
+	ProxyPassword   string  // Auth for original proxy
 	ProxyType       string
 	ProxyCountry    string
 	AllocatedAt     string
@@ -59,6 +61,8 @@ func (c *Client) GetAllocationByVPort(username string, apiKey string, vport int)
 			uap.gateway_port,
 			pp.ip_address,
 			pp.port,
+			pp.proxy_username,
+			pp.proxy_password,
 			pp.proxy_type,
 			pp.country,
 			uap.allocated_at
@@ -80,6 +84,8 @@ func (c *Client) GetAllocationByVPort(username string, apiKey string, vport int)
 		&alloc.GatewayPort,
 		&alloc.ProxyIP,
 		&alloc.ProxyPort,
+		&alloc.ProxyUsername,
+		&alloc.ProxyPassword,
 		&alloc.ProxyType,
 		&alloc.ProxyCountry,
 		&alloc.AllocatedAt,

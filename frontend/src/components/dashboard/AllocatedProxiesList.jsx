@@ -49,7 +49,8 @@ export default function AllocatedProxiesList({ onAllocate }) {
   };
 
   const formatProxyString = (proxy) => {
-    return `${proxy.username}:${proxy.password}@${proxy.gateway_ip}:${proxy.gateway_port}`;
+    // Format: username_vport:api_key@host:port (e.g., alice_10001:pk_abc123@localhost:10001)
+    return `${proxy.username}_${proxy.gateway_port}:${proxy.password}@${proxy.gateway_ip}:${proxy.gateway_port}`;
   };
 
   const copyToClipboard = (text, index) => {
@@ -213,16 +214,16 @@ export default function AllocatedProxiesList({ onAllocate }) {
       <div className="mt-4 p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
         <p className="text-xs text-blue-400">
           <strong>Usage:</strong> Use these credentials with any proxy-enabled application.
-          Format: <code className="text-blue-300">username:password@host:port</code>
+          Format: <code className="text-blue-300">username_vport:api_key@host:port</code>
         </p>
         <p className="text-xs text-slate-500 mt-1">
-          Example: <code className="text-slate-400">curl -x {proxies[0] ? formatProxyString(proxies[0]) : 'username:password@host:port'} https://api.ipify.org</code>
+          Example: <code className="text-slate-400">curl -x {proxies[0] ? formatProxyString(proxies[0]) : 'username_10001:pk_xxx@host:port'} https://api.ipify.org</code>
         </p>
       </div>
 
-      <div className="mt-4 p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
-        <p className="text-xs text-yellow-400">
-          <strong>⚠️ MVP Notice:</strong> Gateway server is not yet implemented. These proxies will work when Go Gateway (Step 2) is deployed.
+      <div className="mt-4 p-3 bg-green-500/5 border border-green-500/20 rounded-lg">
+        <p className="text-xs text-green-400">
+          <strong>✓ Ready to use:</strong> Gateway server is running. Connect using HTTP CONNECT protocol on the specified ports.
         </p>
       </div>
     </Card>

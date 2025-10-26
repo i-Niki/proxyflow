@@ -110,6 +110,11 @@ class ProxyPool(Base):
     proxy_type = Column(Enum(ProxyType, values_callable=lambda c: [e.name for e in c]), nullable=False)
     ip_address = Column(String, nullable=False)
     port = Column(Integer, nullable=False)
+
+    # Auth for original proxy (squid, etc)
+    proxy_username = Column(String, default='')
+    proxy_password = Column(String, default='')
+
     country = Column(String)
     city = Column(String)
     is_active = Column(Boolean, default=True)
