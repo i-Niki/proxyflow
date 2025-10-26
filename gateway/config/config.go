@@ -62,11 +62,16 @@ func (c *Config) PostgresDSN() string {
 }
 
 // ClickHouseDSN returns ClickHouse connection string
+// Format for clickhouse-go v2: clickhouse://host:port/database?params
 func (c *Config) ClickHouseDSN() string {
-	return fmt.Sprintf(
-		"tcp://%s:%d?database=%s&username=%s&password=%s",
-		c.ClickHouseHost, c.ClickHousePort, c.ClickHouseDB, c.ClickHouseUser, c.ClickHousePass,
+	dsn := fmt.Sprintf(
+		"clickhouse://%s:%d/%s?username=%s",
+		c.ClickHouseHost, c.ClickHousePort, c.ClickHouseDB, c.ClickHouseUser,
 	)
+	if c.ClickHousePass != "" {
+		dsn += fmt.Sprintf("&password=%s", c.ClickHousePass)
+	}
+	return dsn
 }
 
 func getEnv(key, defaultValue string) string {

@@ -13,6 +13,9 @@ import (
 	"github.com/i-Niki/proxyflow/gateway/db"
 	"github.com/i-Niki/proxyflow/gateway/proxy"
 	"github.com/i-Niki/proxyflow/gateway/tracker"
+
+	// Register ClickHouse driver
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 )
 
 func main() {
