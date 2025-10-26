@@ -75,7 +75,7 @@ func Tunnel(client net.Conn, target net.Conn) TunnelResult {
 }
 
 // RecordStats records connection statistics
-func RecordStats(result TunnelResult, alloc *AllocationInfo, tracker *tracker.Tracker, success bool) {
+func RecordStats(result TunnelResult, alloc *AllocationInfo, t *tracker.Tracker, success bool) {
 	stats := &tracker.ConnectionStats{
 		UserID:       alloc.UserID,
 		ProxyID:      alloc.ProxyID,
@@ -88,7 +88,7 @@ func RecordStats(result TunnelResult, alloc *AllocationInfo, tracker *tracker.Tr
 		Success:      success,
 	}
 
-	tracker.RecordConnection(stats)
+	t.RecordConnection(stats)
 
 	log.Printf("INFO: Connection stats: user=%d, up=%d, down=%d, duration=%s, success=%v",
 		alloc.UserID, result.BytesUp, result.BytesDown, result.Duration, success)
