@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 import bcrypt
 import secrets
@@ -45,17 +45,23 @@ app.add_middleware(
 
 security = HTTPBearer()
 
+# Time helpers
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
 # Enums
 class ProxyType(str, enum.Enum):
-    RESIDENTIAL = "residential"
-    DATACENTER = "datacenter"
-    MOBILE = "mobile"
-    ISP = "isp"
+    # Values align with DB enum labels (uppercase)
+    RESIDENTIAL = "RESIDENTIAL"
+    DATACENTER = "DATACENTER"
+    MOBILE = "MOBILE"
+    ISP = "ISP"
 
 class PlanType(str, enum.Enum):
-    STARTER = "starter"
-    PROFESSIONAL = "professional"
-    ENTERPRISE = "enterprise"
+    # Values align with DB enum labels (uppercase)
+    STARTER = "STARTER"
+    PROFESSIONAL = "PROFESSIONAL"
+    ENTERPRISE = "ENTERPRISE"
 
 # Database Models
 class User(Base):
@@ -66,7 +72,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     api_key = Column(String, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
     is_active = Column(Boolean, default=True)
     
     subscription = relationship("Subscription", back_populates="user", uselist=False)
@@ -77,7 +83,8 @@ class Subscription(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    plan = Column(Enum(PlanType), nullable=False)
+    # Store enum NAMEs in DB (matches existing uppercase ENUM values)
+    plan = Column(Enum(PlanType, values_callable=lambda c: [e.name for e in c]), nullable=False)
 
     # Data limits (tracked when Gateway is implemented)
     data_limit_gb = Column(Float, nullable=False)
@@ -90,7 +97,7 @@ class Subscription(Base):
     concurrent_connections = Column(Integer, nullable=False)
     is_active = Column(Boolean, default=True)
     expires_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
 
     user = relationship("User", back_populates="subscription")
 
@@ -98,7 +105,8 @@ class ProxyPool(Base):
     __tablename__ = "proxy_pools"
 
     id = Column(Integer, primary_key=True, index=True)
-    proxy_type = Column(Enum(ProxyType), nullable=False)
+    # Store enum NAMEs in DB (matches existing uppercase ENUM values)
+    proxy_type = Column(Enum(ProxyType, values_callable=lambda c: [e.name for e in c]), nullable=False)
     ip_address = Column(String, nullable=False)
     port = Column(Integer, nullable=False)
     country = Column(String)
@@ -118,7 +126,7 @@ class UserAllocatedProxy(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     proxy_pool_id = Column(Integer, ForeignKey("proxy_pools.id"), nullable=False)
     gateway_port = Column(Integer, nullable=False, unique=True)
-    allocated_at = Column(DateTime, default=datetime.utcnow)
+    allocated_at = Column(DateTime, default=now_utc)
 
 class UsageLog(Base):
     __tablename__ = "usage_logs"
@@ -131,7 +139,7 @@ class UsageLog(Base):
     data_used_mb = Column(Float, default=0.0)
     
     request_count = Column(Integer, default=1)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=now_utc)
     success = Column(Boolean, default=True)
     
     user = relationship("User", back_populates="usage_logs")
@@ -226,7 +234,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = now_utc() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -318,7 +326,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         data_limit_gb=limits["data_limit_gb"],
         allocated_proxies_limit=limits["allocated_proxies_limit"],
         concurrent_connections=limits["concurrent_connections"],
-        expires_at=datetime.utcnow() + timedelta(days=30)
+        expires_at=now_utc() + timedelta(days=30)
     )
     db.add(subscription)
     db.commit()
@@ -382,7 +390,7 @@ def get_user_stats(current_user: User = Depends(get_current_user), db: Session =
     ).scalar() or 0
     
     # Last 7 days usage (by proxy request count)
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    seven_days_ago = now_utc() - timedelta(days=7)
     last_7_days = []
     
     for i in range(7):
@@ -435,10 +443,10 @@ def update_subscription(
     subscription.concurrent_connections = limits["concurrent_connections"]
 
     # Extend expiration by 30 days
-    if subscription.expires_at and subscription.expires_at > datetime.utcnow():
+    if subscription.expires_at and subscription.expires_at > now_utc():
         subscription.expires_at = subscription.expires_at + timedelta(days=30)
     else:
-        subscription.expires_at = datetime.utcnow() + timedelta(days=30)
+        subscription.expires_at = now_utc() + timedelta(days=30)
 
     db.commit()
     db.refresh(subscription)
@@ -475,7 +483,7 @@ def get_proxies(
         raise HTTPException(status_code=403, detail="No active subscription")
 
     # Check if subscription expired
-    if subscription.expires_at and subscription.expires_at < datetime.utcnow():
+    if subscription.expires_at and subscription.expires_at < now_utc():
         raise HTTPException(status_code=403, detail="Subscription expired")
 
     query = db.query(ProxyPool).filter(
@@ -503,7 +511,7 @@ def get_proxies(
         db.add(usage_log)
 
         # Update proxy last_used
-        proxy.last_used = datetime.utcnow()
+        proxy.last_used = now_utc()
 
     db.commit()
 
@@ -536,7 +544,7 @@ def allocate_proxies(
         raise HTTPException(status_code=403, detail="No active subscription")
 
     # Check if subscription expired
-    if subscription.expires_at and subscription.expires_at < datetime.utcnow():
+    if subscription.expires_at and subscription.expires_at < now_utc():
         raise HTTPException(status_code=403, detail="Subscription expired")
 
     # Check if user already allocated proxies (MVP: one-time allocation)
@@ -547,13 +555,13 @@ def allocate_proxies(
         )
 
     quantity = subscription.allocated_proxies_limit
-
+    print(f"Quantity: {quantity}")
     # Find available proxies from pool (shared proxy support)
     available_proxies = db.query(ProxyPool).filter(
         ProxyPool.is_active == True,
         ProxyPool.current_users < ProxyPool.max_users
     ).limit(quantity).all()
-
+    print(f"Available proxies: {available_proxies}")
     if len(available_proxies) < quantity:
         raise HTTPException(
             status_code=503,
@@ -583,7 +591,7 @@ def allocate_proxies(
 
         # Increment proxy usage counter
         proxy.current_users += 1
-        proxy.last_used = datetime.utcnow()
+        proxy.last_used = now_utc()
 
         allocated.append({
             "id": proxy.id,
@@ -591,7 +599,7 @@ def allocate_proxies(
             "gateway_port": gateway_port,
             "username": current_user.username,
             "password": current_user.api_key,
-            "allocated_at": datetime.utcnow(),
+            "allocated_at": now_utc(),
             "original_proxy_type": proxy.proxy_type.value,
             "original_proxy_country": proxy.country
         })
@@ -654,10 +662,10 @@ def release_proxy(
 def get_proxy_types():
     return {
         "types": [
-            {"value": "residential", "label": "Residential"},
-            {"value": "datacenter", "label": "Datacenter"},
-            {"value": "mobile", "label": "Mobile"},
-            {"value": "isp", "label": "ISP"}
+            {"value": "RESIDENTIAL", "label": "Residential"},
+            {"value": "DATACENTER", "label": "Datacenter"},
+            {"value": "MOBILE", "label": "Mobile"},
+            {"value": "ISP", "label": "ISP"}
         ]
     }
 

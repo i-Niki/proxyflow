@@ -21,11 +21,12 @@ class User(models.Model):
 
 class ProxyPool(models.Model):
     """Maps to FastAPI's proxy_pools table"""
+    # Values must match DB enum names (uppercase) for compatibility with SQLAlchemy Enum names
     PROXY_TYPES = [
-        ('RESIDENTIAL', 'Residential'),
-        ('DATACENTER', 'Datacenter'),
-        ('MOBILE', 'Mobile'),
-        ('ISP', 'ISP'),
+		('RESIDENTIAL', 'RESIDENTIAL'),
+		('DATACENTER', 'DATACENTER'),
+		('MOBILE', 'MOBILE'),
+		('ISP', 'ISP')
     ]
     
     proxy_type = models.CharField(max_length=20, choices=PROXY_TYPES)
