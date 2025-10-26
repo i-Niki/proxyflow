@@ -156,7 +156,7 @@ class UsageLog(Base):
 # Pydantic Models
 class UserCreate(BaseModel):
     email: EmailStr
-    username: str
+    username: Optional[str] = None  # Optional, auto-generated from email if not provided
     password: str
 
 class UserLogin(BaseModel):
@@ -309,16 +309,20 @@ def root():
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    if db.query(User).filter(User.username == user_data.username).first():
+
+    # Auto-generate username from email if not provided (part before @)
+    username = user_data.username if user_data.username else user_data.email.split('@')[0]
+
+    # Check if username is taken
+    if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="Username already taken")
-    
+
     hashed_pw = hash_password(user_data.password)
     api_key = generate_api_key()
-    
+
     user = User(
         email=user_data.email,
-        username=user_data.username,
+        username=username,
         hashed_password=hashed_pw,
         api_key=api_key
     )

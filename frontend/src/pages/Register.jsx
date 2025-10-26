@@ -45,9 +45,8 @@ export default function Register() {
       newErrors.email = 'Email is invalid';
     }
 
-    if (!formData.username) {
-      newErrors.username = 'Username is required';
-    } else if (formData.username.length < 3) {
+    // Username is optional - will be auto-generated from email if not provided
+    if (formData.username && formData.username.length < 3) {
       newErrors.username = 'Username must be at least 3 characters';
     }
 
@@ -128,13 +127,12 @@ export default function Register() {
             <Input
               type="text"
               name="username"
-              label="Username"
-              placeholder="johndoe"
+              label="Username (optional)"
+              placeholder="Auto-generated from email if empty"
               value={formData.username}
               onChange={handleChange}
               error={errors.username}
-              helperText="At least 3 characters"
-              required
+              helperText="Optional - will use part before @ from email"
               disabled={loading}
             />
 
