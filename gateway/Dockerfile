@@ -9,9 +9,10 @@ RUN apk add --no-cache git
 # Copy everything
 COPY . .
 
-# Download dependencies and build in one step
-# This allows go.sum to be created and used in the same layer
-RUN go mod download && \
+# Tidy modules to generate complete go.mod and go.sum, then build
+# go mod tidy adds all transitive dependencies and creates complete go.sum
+RUN go mod tidy && \
+    go mod download && \
     CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gateway main.go
 
 # Runtime stage
