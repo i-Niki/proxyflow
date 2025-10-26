@@ -6,15 +6,13 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache git
 
-# Copy go mod files
-COPY go.mod go.sum* ./
-RUN go mod download
-
-# Copy source code
+# Copy everything
 COPY . .
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gateway main.go
+# Download dependencies and build in one step
+# This allows go.sum to be created and used in the same layer
+RUN go mod download && \
+    CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gateway main.go
 
 # Runtime stage
 FROM alpine:latest
