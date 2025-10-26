@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import bcrypt
 import secrets
+import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Boolean, ForeignKey, Enum, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -109,6 +110,11 @@ class ProxyPool(Base):
     proxy_type = Column(Enum(ProxyType, values_callable=lambda c: [e.name for e in c]), nullable=False)
     ip_address = Column(String, nullable=False)
     port = Column(Integer, nullable=False)
+
+    # Auth for original proxy (squid, etc)
+    proxy_username = Column(String, default='')
+    proxy_password = Column(String, default='')
+
     country = Column(String)
     city = Column(String)
     is_active = Column(Boolean, default=True)
@@ -150,7 +156,7 @@ class UsageLog(Base):
 # Pydantic Models
 class UserCreate(BaseModel):
     email: EmailStr
-    username: str
+    username: Optional[str] = None  # Optional, auto-generated from email if not provided
     password: str
 
 class UserLogin(BaseModel):
@@ -215,7 +221,8 @@ class UpdateSubscriptionRequest(BaseModel):
 class AllocatedProxyResponse(BaseModel):
     id: int
     gateway_ip: str
-    gateway_port: int
+    gateway_port: int  # Virtual port (encoded in username, e.g. 10000)
+    gateway_listen_port: int  # Physical port where Gateway listens (8080)
     username: str
     password: str
     allocated_at: datetime
@@ -302,16 +309,20 @@ def root():
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user_data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    if db.query(User).filter(User.username == user_data.username).first():
+
+    # Auto-generate username from email if not provided (part before @)
+    username = user_data.username if user_data.username else user_data.email.split('@')[0]
+
+    # Check if username is taken
+    if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="Username already taken")
-    
+
     hashed_pw = hash_password(user_data.password)
     api_key = generate_api_key()
-    
+
     user = User(
         email=user_data.email,
-        username=user_data.username,
+        username=username,
         hashed_password=hashed_pw,
         api_key=api_key
     )
@@ -576,7 +587,9 @@ def allocate_proxies(
     next_port = 10000 if not last_allocation else last_allocation.gateway_port + 1
 
     allocated = []
-    gateway_ip = "127.0.0.1"  # TODO: Replace with actual gateway server IP
+    # Get gateway IP and port from environment
+    gateway_ip = os.getenv("GATEWAY_HOST", "localhost")
+    gateway_listen_port = int(os.getenv("GATEWAY_PORT", "8080"))
 
     for i, proxy in enumerate(available_proxies):
         gateway_port = next_port + i
@@ -596,7 +609,8 @@ def allocate_proxies(
         allocated.append({
             "id": proxy.id,
             "gateway_ip": gateway_ip,
-            "gateway_port": gateway_port,
+            "gateway_port": gateway_port,  # Virtual port for username
+            "gateway_listen_port": gateway_listen_port,  # Physical port (8080)
             "username": current_user.username,
             "password": current_user.api_key,
             "allocated_at": now_utc(),
@@ -626,7 +640,9 @@ def list_allocated_proxies(
     if not allocations:
         return []
 
-    gateway_ip = "127.0.0.1"  # TODO: Replace with actual gateway server IP
+    # Get gateway IP and port from environment
+    gateway_ip = os.getenv("GATEWAY_HOST", "localhost")
+    gateway_listen_port = int(os.getenv("GATEWAY_PORT", "8080"))
 
     result = []
     for alloc in allocations:
@@ -634,7 +650,8 @@ def list_allocated_proxies(
         result.append({
             "id": alloc.id,
             "gateway_ip": gateway_ip,
-            "gateway_port": alloc.gateway_port,
+            "gateway_port": alloc.gateway_port,  # Virtual port for username
+            "gateway_listen_port": gateway_listen_port,  # Physical port (8080)
             "username": current_user.username,
             "password": current_user.api_key,
             "allocated_at": alloc.allocated_at,
