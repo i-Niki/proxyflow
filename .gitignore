@@ -330,3 +330,22 @@ ssl/
 
 # Requirements backup
 requirements.txt~
+
+# front
+
+# Django
+/storage/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# Node/Vue
+frontend/node_modules/
+frontend/dist/
+
+# IDE & прочее
+*.code-workspace
+*.log
