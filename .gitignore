@@ -349,3 +349,4 @@ frontend/dist/
 # IDE & прочее
 *.code-workspace
 *.log
+gateway/go.sum
