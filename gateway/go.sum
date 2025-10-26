@@ -1,6 +1,6 @@
 github.com/ClickHouse/ch-go v0.58.2 h1:jSm2szHbT9MCAB1rJ3WuCJqmGLi5UTjlNu+f530UTS0=
 github.com/ClickHouse/ch-go v0.58.2/go.mod h1:LhC1FlaJBY59rO8rxsUu+Hq6Z6NnVVnBvkWLN6q8xbA=
-github.com/ClickHouse/clickhouse-go/v2 v2.15.0 h1:vJSRnH/Mmox3tV9e3NJqmJX8W4gXDy2v8yLXcq08nmo=
+github.com/ClickHouse/clickhouse-go/v2 v2.15.0 h1:kXt1SRq0PIRa6aKZD7TnFnY9PQKmc2b13sHtOYcK6cQ=
 github.com/ClickHouse/clickhouse-go/v2 v2.15.0/go.mod h1:lLeg3qyMJ9p3LoDvKb0kELGmyV4rUlFLxLhN2SXd2H4=
 github.com/lib/pq v1.10.9 h1:YXG7RB+JIjhP29X+OtkiDnYaXQwpS4JEWq7dtCCRUEw=
 github.com/lib/pq v1.10.9/go.mod h1:AlVN5x4E4T544tWzH6hKfbfQvm3HdbOxrmggDNAPY9o=
