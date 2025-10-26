@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import jwt
 import bcrypt
 import secrets
+import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Boolean, ForeignKey, Enum, func
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
@@ -576,7 +577,8 @@ def allocate_proxies(
     next_port = 10000 if not last_allocation else last_allocation.gateway_port + 1
 
     allocated = []
-    gateway_ip = "127.0.0.1"  # TODO: Replace with actual gateway server IP
+    # Get gateway IP from environment (for Docker: "gateway", for local: "localhost")
+    gateway_ip = os.getenv("GATEWAY_HOST", "localhost")
 
     for i, proxy in enumerate(available_proxies):
         gateway_port = next_port + i
@@ -626,7 +628,8 @@ def list_allocated_proxies(
     if not allocations:
         return []
 
-    gateway_ip = "127.0.0.1"  # TODO: Replace with actual gateway server IP
+    # Get gateway IP from environment (for Docker: "gateway", for local: "localhost")
+    gateway_ip = os.getenv("GATEWAY_HOST", "localhost")
 
     result = []
     for alloc in allocations:
