@@ -4,7 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
 import bcrypt
 import secrets
@@ -45,17 +45,23 @@ app.add_middleware(
 
 security = HTTPBearer()
 
+# Time helpers
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
 # Enums
 class ProxyType(str, enum.Enum):
-    RESIDENTIAL = "residential"
-    DATACENTER = "datacenter"
-    MOBILE = "mobile"
-    ISP = "isp"
+    # Values align with DB enum labels (uppercase)
+    RESIDENTIAL = "RESIDENTIAL"
+    DATACENTER = "DATACENTER"
+    MOBILE = "MOBILE"
+    ISP = "ISP"
 
 class PlanType(str, enum.Enum):
-    STARTER = "starter"
-    PROFESSIONAL = "professional"
-    ENTERPRISE = "enterprise"
+    # Values align with DB enum labels (uppercase)
+    STARTER = "STARTER"
+    PROFESSIONAL = "PROFESSIONAL"
+    ENTERPRISE = "ENTERPRISE"
 
 # Database Models
 class User(Base):
@@ -66,7 +72,7 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     api_key = Column(String, unique=True, index=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=now_utc)
     is_active = Column(Boolean, default=True)
     
     subscription = relationship("Subscription", back_populates="user", uselist=False)
@@ -74,31 +80,33 @@ class User(Base):
 
 class Subscription(Base):
     __tablename__ = "subscriptions"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
-    plan = Column(Enum(PlanType), nullable=False)
-    
-    # Data limits (for future Proxy Gateway - when traffic goes through us)
+    # Store enum NAMEs in DB (matches existing uppercase ENUM values)
+    plan = Column(Enum(PlanType, values_callable=lambda c: [e.name for e in c]), nullable=False)
+
+    # Data limits (tracked when Gateway is implemented)
     data_limit_gb = Column(Float, nullable=False)
     data_used_gb = Column(Float, default=0.0)
-    
-    # Proxy request limits (current MVP implementation)
-    proxy_requests_limit = Column(Integer, default=1000)
-    proxy_requests_used = Column(Integer, default=0)
-    
+
+    # Proxy allocation limits (MVP - how many proxies user can allocate)
+    allocated_proxies_limit = Column(Integer, default=10)
+    allocated_proxies_count = Column(Integer, default=0)
+
     concurrent_connections = Column(Integer, nullable=False)
     is_active = Column(Boolean, default=True)
     expires_at = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
+    created_at = Column(DateTime, default=now_utc)
+
     user = relationship("User", back_populates="subscription")
 
 class ProxyPool(Base):
     __tablename__ = "proxy_pools"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    proxy_type = Column(Enum(ProxyType), nullable=False)
+    # Store enum NAMEs in DB (matches existing uppercase ENUM values)
+    proxy_type = Column(Enum(ProxyType, values_callable=lambda c: [e.name for e in c]), nullable=False)
     ip_address = Column(String, nullable=False)
     port = Column(Integer, nullable=False)
     country = Column(String)
@@ -106,6 +114,19 @@ class ProxyPool(Base):
     is_active = Column(Boolean, default=True)
     last_used = Column(DateTime)
     success_rate = Column(Float, default=100.0)
+
+    # Shared proxies support
+    max_users = Column(Integer, default=10)
+    current_users = Column(Integer, default=0)
+
+class UserAllocatedProxy(Base):
+    __tablename__ = "user_allocated_proxies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    proxy_pool_id = Column(Integer, ForeignKey("proxy_pools.id"), nullable=False)
+    gateway_port = Column(Integer, nullable=False, unique=True)
+    allocated_at = Column(DateTime, default=now_utc)
 
 class UsageLog(Base):
     __tablename__ = "usage_logs"
@@ -118,7 +139,7 @@ class UsageLog(Base):
     data_used_mb = Column(Float, default=0.0)
     
     request_count = Column(Integer, default=1)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=now_utc)
     success = Column(Boolean, default=True)
     
     user = relationship("User", back_populates="usage_logs")
@@ -156,13 +177,13 @@ class SubscriptionResponse(BaseModel):
     plan: str
     data_limit_gb: float
     data_used_gb: float
-    proxy_requests_limit: int
-    proxy_requests_used: int
+    allocated_proxies_limit: int
+    allocated_proxies_count: int
     concurrent_connections: int
     is_active: bool
     expires_at: Optional[datetime]
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
 
@@ -191,6 +212,19 @@ class ProxyResponse(BaseModel):
 class UpdateSubscriptionRequest(BaseModel):
     plan: PlanType
 
+class AllocatedProxyResponse(BaseModel):
+    id: int
+    gateway_ip: str
+    gateway_port: int
+    username: str
+    password: str
+    allocated_at: datetime
+    original_proxy_type: str
+    original_proxy_country: Optional[str]
+
+    class Config:
+        from_attributes = True
+
 # Utility functions
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -200,7 +234,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = now_utc() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -242,18 +276,18 @@ def get_plan_limits(plan: PlanType) -> dict:
     """Get limits for each plan"""
     limits = {
         PlanType.STARTER: {
-            "data_limit_gb": 5.0,  # For future gateway
-            "proxy_requests_limit": 1000,  # Current MVP
+            "data_limit_gb": 10.0,
+            "allocated_proxies_limit": 10,
             "concurrent_connections": 50,
         },
         PlanType.PROFESSIONAL: {
-            "data_limit_gb": 25.0,
-            "proxy_requests_limit": 10000,
+            "data_limit_gb": 50.0,
+            "allocated_proxies_limit": 50,
             "concurrent_connections": 500,
         },
         PlanType.ENTERPRISE: {
-            "data_limit_gb": 1000.0,
-            "proxy_requests_limit": 100000,
+            "data_limit_gb": 200.0,
+            "allocated_proxies_limit": 200,
             "concurrent_connections": 10000,
         }
     }
@@ -290,9 +324,9 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
         user_id=user.id,
         plan=PlanType.STARTER,
         data_limit_gb=limits["data_limit_gb"],
-        proxy_requests_limit=limits["proxy_requests_limit"],
+        allocated_proxies_limit=limits["allocated_proxies_limit"],
         concurrent_connections=limits["concurrent_connections"],
-        expires_at=datetime.utcnow() + timedelta(days=30)
+        expires_at=now_utc() + timedelta(days=30)
     )
     db.add(subscription)
     db.commit()
@@ -356,7 +390,7 @@ def get_user_stats(current_user: User = Depends(get_current_user), db: Session =
     ).scalar() or 0
     
     # Last 7 days usage (by proxy request count)
-    seven_days_ago = datetime.utcnow() - timedelta(days=7)
+    seven_days_ago = now_utc() - timedelta(days=7)
     last_7_days = []
     
     for i in range(7):
@@ -405,24 +439,24 @@ def update_subscription(
     # Update subscription
     subscription.plan = update_data.plan
     subscription.data_limit_gb = limits["data_limit_gb"]
-    subscription.proxy_requests_limit = limits["proxy_requests_limit"]
+    subscription.allocated_proxies_limit = limits["allocated_proxies_limit"]
     subscription.concurrent_connections = limits["concurrent_connections"]
-    
+
     # Extend expiration by 30 days
-    if subscription.expires_at and subscription.expires_at > datetime.utcnow():
+    if subscription.expires_at and subscription.expires_at > now_utc():
         subscription.expires_at = subscription.expires_at + timedelta(days=30)
     else:
-        subscription.expires_at = datetime.utcnow() + timedelta(days=30)
-    
+        subscription.expires_at = now_utc() + timedelta(days=30)
+
     db.commit()
     db.refresh(subscription)
-    
+
     return {
         "message": "Subscription updated successfully",
         "subscription": {
             "plan": subscription.plan.value,
             "data_limit_gb": subscription.data_limit_gb,
-            "proxy_requests_limit": subscription.proxy_requests_limit,
+            "allocated_proxies_limit": subscription.allocated_proxies_limit,
             "concurrent_connections": subscription.concurrent_connections,
             "expires_at": subscription.expires_at
         }
@@ -435,50 +469,36 @@ def get_proxies(
     db: Session = Depends(get_db)
 ):
     """
-    Get proxies (MVP: counts proxy requests, not traffic)
-    Future: Will be Proxy Gateway that tracks real traffic
+    LEGACY ENDPOINT - for backward compatibility
+    Get proxies directly from pool (returns original proxy, not gateway)
+    Use /proxy/allocate for gateway-based proxies
     """
     user = get_user_by_api_key(api_key, db)
-    
+
     subscription = db.query(Subscription).filter(
         Subscription.user_id == user.id
     ).first()
-    
+
     if not subscription or not subscription.is_active:
         raise HTTPException(status_code=403, detail="No active subscription")
-    
+
     # Check if subscription expired
-    if subscription.expires_at and subscription.expires_at < datetime.utcnow():
+    if subscription.expires_at and subscription.expires_at < now_utc():
         raise HTTPException(status_code=403, detail="Subscription expired")
-    
-    # Check proxy request limit (MVP)
-    if subscription.proxy_requests_used >= subscription.proxy_requests_limit:
-        raise HTTPException(
-            status_code=403, 
-            detail=f"Proxy request limit exceeded ({subscription.proxy_requests_limit} requests)"
-        )
-    
-    # Check if user can request this many proxies
-    remaining = subscription.proxy_requests_limit - subscription.proxy_requests_used
-    if request.quantity > remaining:
-        raise HTTPException(
-            status_code=403,
-            detail=f"Cannot request {request.quantity} proxies. Only {remaining} remaining."
-        )
-    
+
     query = db.query(ProxyPool).filter(
         ProxyPool.proxy_type == request.proxy_type,
         ProxyPool.is_active == True
     )
-    
+
     if request.country:
         query = query.filter(ProxyPool.country == request.country)
-    
+
     proxies = query.limit(request.quantity).all()
-    
+
     if not proxies:
         raise HTTPException(status_code=404, detail="No proxies available")
-    
+
     # Log usage for each proxy
     for proxy in proxies:
         usage_log = UsageLog(
@@ -489,17 +509,12 @@ def get_proxies(
             success=True
         )
         db.add(usage_log)
-        
+
         # Update proxy last_used
-        proxy.last_used = datetime.utcnow()
-    
-    # Increment proxy request counter (MVP)
-    subscription.proxy_requests_used += len(proxies)
-    
-    # Note: data_used_gb will be updated by Proxy Gateway in future
-    
+        proxy.last_used = now_utc()
+
     db.commit()
-    
+
     return [
         ProxyResponse(
             ip_address=proxy.ip_address,
@@ -512,14 +527,145 @@ def get_proxies(
         for proxy in proxies
     ]
 
+@app.post("/proxy/allocate", response_model=List[AllocatedProxyResponse])
+def allocate_proxies(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Allocate ALL proxies for user's plan (one-time allocation for MVP)
+    Returns gateway-based proxy credentials
+    """
+    subscription = db.query(Subscription).filter(
+        Subscription.user_id == current_user.id
+    ).first()
+
+    if not subscription or not subscription.is_active:
+        raise HTTPException(status_code=403, detail="No active subscription")
+
+    # Check if subscription expired
+    if subscription.expires_at and subscription.expires_at < now_utc():
+        raise HTTPException(status_code=403, detail="Subscription expired")
+
+    # Check if user already allocated proxies (MVP: one-time allocation)
+    if subscription.allocated_proxies_count > 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Proxies already allocated. You have {subscription.allocated_proxies_count} proxies. Use /proxy/list to view them."
+        )
+
+    quantity = subscription.allocated_proxies_limit
+    print(f"Quantity: {quantity}")
+    # Find available proxies from pool (shared proxy support)
+    available_proxies = db.query(ProxyPool).filter(
+        ProxyPool.is_active == True,
+        ProxyPool.current_users < ProxyPool.max_users
+    ).limit(quantity).all()
+    print(f"Available proxies: {available_proxies}")
+    if len(available_proxies) < quantity:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Not enough proxies available. Requested: {quantity}, Available: {len(available_proxies)}"
+        )
+
+    # Get next available gateway port (start from 10000)
+    last_allocation = db.query(UserAllocatedProxy).order_by(
+        UserAllocatedProxy.gateway_port.desc()
+    ).first()
+
+    next_port = 10000 if not last_allocation else last_allocation.gateway_port + 1
+
+    allocated = []
+    gateway_ip = "127.0.0.1"  # TODO: Replace with actual gateway server IP
+
+    for i, proxy in enumerate(available_proxies):
+        gateway_port = next_port + i
+
+        # Create allocation record
+        allocation = UserAllocatedProxy(
+            user_id=current_user.id,
+            proxy_pool_id=proxy.id,
+            gateway_port=gateway_port
+        )
+        db.add(allocation)
+
+        # Increment proxy usage counter
+        proxy.current_users += 1
+        proxy.last_used = now_utc()
+
+        allocated.append({
+            "id": proxy.id,
+            "gateway_ip": gateway_ip,
+            "gateway_port": gateway_port,
+            "username": current_user.username,
+            "password": current_user.api_key,
+            "allocated_at": now_utc(),
+            "original_proxy_type": proxy.proxy_type.value,
+            "original_proxy_country": proxy.country
+        })
+
+    # Update subscription counter
+    subscription.allocated_proxies_count = len(allocated)
+
+    db.commit()
+
+    return allocated
+
+@app.get("/proxy/list", response_model=List[AllocatedProxyResponse])
+def list_allocated_proxies(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get list of user's allocated proxies
+    """
+    allocations = db.query(UserAllocatedProxy).filter(
+        UserAllocatedProxy.user_id == current_user.id
+    ).all()
+
+    if not allocations:
+        return []
+
+    gateway_ip = "127.0.0.1"  # TODO: Replace with actual gateway server IP
+
+    result = []
+    for alloc in allocations:
+        proxy = db.query(ProxyPool).filter(ProxyPool.id == alloc.proxy_pool_id).first()
+        result.append({
+            "id": alloc.id,
+            "gateway_ip": gateway_ip,
+            "gateway_port": alloc.gateway_port,
+            "username": current_user.username,
+            "password": current_user.api_key,
+            "allocated_at": alloc.allocated_at,
+            "original_proxy_type": proxy.proxy_type.value if proxy else "unknown",
+            "original_proxy_country": proxy.country if proxy else None
+        })
+
+    return result
+
+@app.delete("/proxy/{proxy_id}/release")
+def release_proxy(
+    proxy_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Release a proxy (stub for MVP - not implemented yet)
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="Proxy release is not implemented in MVP. Proxies are allocated permanently until subscription expires."
+    )
+
 @app.get("/proxy/types")
 def get_proxy_types():
     return {
         "types": [
-            {"value": "residential", "label": "Residential"},
-            {"value": "datacenter", "label": "Datacenter"},
-            {"value": "mobile", "label": "Mobile"},
-            {"value": "isp", "label": "ISP"}
+            {"value": "RESIDENTIAL", "label": "Residential"},
+            {"value": "DATACENTER", "label": "Datacenter"},
+            {"value": "MOBILE", "label": "Mobile"},
+            {"value": "ISP", "label": "ISP"}
         ]
     }
 

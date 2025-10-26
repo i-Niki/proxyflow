@@ -12,7 +12,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
 import { Card, Button, Spinner, Alert, Badge } from '../components/common';
-import ProxyGenerator from '../components/dashboard/ProxyGenerator';
+import AllocatedProxiesList from '../components/dashboard/AllocatedProxiesList';
 import StatsCard from '../components/dashboard/StatsCard';
 import SubscriptionModal from '../components/dashboard/SubscriptionModal';
 
@@ -62,12 +62,12 @@ export default function Dashboard() {
     );
   }
 
-  const proxyUsagePercent = subscription 
-    ? (subscription.proxy_requests_used / subscription.proxy_requests_limit) * 100 
+  const proxyUsagePercent = subscription
+    ? (subscription.allocated_proxies_count / subscription.allocated_proxies_limit) * 100
     : 0;
 
-  const remainingProxies = subscription 
-    ? subscription.proxy_requests_limit - subscription.proxy_requests_used 
+  const remainingProxies = subscription
+    ? subscription.allocated_proxies_limit - subscription.allocated_proxies_count
     : 0;
 
   return (
@@ -120,12 +120,12 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatsCard
             icon={<Database className="w-6 h-6" />}
-            title="Proxies Used"
-            value={subscription?.proxy_requests_used || 0}
-            subtitle={`of ${subscription?.proxy_requests_limit || 0} limit`}
+            title="Proxies Allocated"
+            value={subscription?.allocated_proxies_count || 0}
+            subtitle={`of ${subscription?.allocated_proxies_limit || 0} limit`}
             color="blue"
           />
-          
+
           <StatsCard
             icon={<Zap className="w-6 h-6" />}
             title="Plan"
@@ -133,15 +133,15 @@ export default function Dashboard() {
             subtitle="Current subscription"
             color="purple"
           />
-          
+
           <StatsCard
             icon={<Activity className="w-6 h-6" />}
-            title="Remaining"
-            value={remainingProxies}
-            subtitle="Proxies available"
+            title="Data Usage"
+            value={`${(subscription?.data_used_gb || 0).toFixed(2)} GB`}
+            subtitle={`of ${subscription?.data_limit_gb || 0} GB limit`}
             color="green"
           />
-          
+
           <StatsCard
             icon={<BarChart3 className="w-6 h-6" />}
             title="Status"
@@ -151,32 +151,32 @@ export default function Dashboard() {
           />
         </div>
 
-        {/* Proxy Usage Progress */}
+        {/* Proxy Allocation Progress */}
         <Card className="mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-white">Proxy Usage</h3>
-            <Badge variant={proxyUsagePercent > 80 ? "danger" : "primary"}>
-              {proxyUsagePercent.toFixed(1)}% used
+            <h3 className="text-lg font-semibold text-white">Proxy Allocation</h3>
+            <Badge variant={proxyUsagePercent >= 100 ? "success" : "primary"}>
+              {proxyUsagePercent.toFixed(0)}% allocated
             </Badge>
           </div>
-          
+
           <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
-            <div 
+            <div
               className={`h-full rounded-full transition-all ${
-                proxyUsagePercent > 80 ? 'bg-red-500' : 'bg-blue-500'
+                proxyUsagePercent >= 100 ? 'bg-green-500' : 'bg-blue-500'
               }`}
               style={{ width: `${Math.min(proxyUsagePercent, 100)}%` }}
             />
           </div>
-          
+
           <div className="flex justify-between mt-2 text-sm text-slate-400">
-            <span>{subscription?.proxy_requests_used || 0} proxies used</span>
-            <span>{remainingProxies} remaining</span>
+            <span>{subscription?.allocated_proxies_count || 0} proxies allocated</span>
+            <span>{remainingProxies} available</span>
           </div>
-          
-          {proxyUsagePercent > 80 && (
-            <Alert variant="warning" className="mt-4">
-              You're running low on proxies. Consider upgrading your plan.
+
+          {proxyUsagePercent === 0 && (
+            <Alert variant="info" className="mt-4">
+              Click "Allocate All Proxies" below to get started!
             </Alert>
           )}
         </Card>
@@ -201,27 +201,26 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-slate-400 mb-1">Proxy Limit</p>
-              <p className="text-white font-semibold">{subscription?.proxy_requests_limit}/month</p>
+              <p className="text-white font-semibold">{subscription?.allocated_proxies_limit} proxies</p>
+            </div>
+            <div>
+              <p className="text-slate-400 mb-1">Data Limit</p>
+              <p className="text-white font-semibold">{subscription?.data_limit_gb} GB</p>
             </div>
             <div>
               <p className="text-slate-400 mb-1">Expires</p>
               <p className="text-white font-semibold">
-                {subscription?.expires_at 
+                {subscription?.expires_at
                   ? new Date(subscription.expires_at).toLocaleDateString()
                   : 'N/A'
                 }
               </p>
             </div>
-            <div>
-              <p className="text-slate-400 mb-1">Unique Proxies</p>
-              <p className="text-white font-semibold">{stats?.unique_proxies_used || 0}</p>
-            </div>
           </div>
-          
+
           <div className="mt-4 pt-4 border-t border-slate-700">
             <p className="text-xs text-slate-500">
-              💡 <strong>Future:</strong> Data usage (GB) will be tracked when Proxy Gateway is implemented. 
-              Currently counting proxy requests only.
+              💡 <strong>MVP Note:</strong> Traffic tracking will be active when Go Gateway (Step 2) is deployed.
             </p>
           </div>
         </Card>
@@ -254,10 +253,9 @@ export default function Dashboard() {
           </p>
         </Card>
 
-        {/* Proxy Generator */}
-        <ProxyGenerator 
-          onProxyGenerated={loadDashboardData}
-          remainingProxies={remainingProxies}
+        {/* Allocated Proxies List */}
+        <AllocatedProxiesList
+          onAllocate={loadDashboardData}
         />
 
         {/* Quick Actions */}

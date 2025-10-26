@@ -60,15 +60,8 @@ class ProxyPoolAdmin(admin.ModelAdmin):
     ip_port.short_description = 'IP:Port'
     
     def usage_display(self, obj):
-        percent = (obj.current_users / obj.max_users * 100) if obj.max_users > 0 else 0
-        color = 'green' if percent < 70 else 'orange' if percent < 90 else 'red'
-        return format_html(
-            '<span style="color: {};">{} / {} users ({:.0f}%)</span>',
-            color,
-            obj.current_users,
-            obj.max_users,
-            percent
-        )
+        percent = int(round((obj.current_users / obj.max_users * 100))) if obj.max_users > 0 else 0
+        return f"{obj.current_users} / {obj.max_users} users ({percent}%)"
     usage_display.short_description = 'Usage'
 
 
@@ -111,15 +104,8 @@ class SubscriptionAdmin(admin.ModelAdmin):
     )
     
     def proxy_allocation_display(self, obj):
-        percent = obj.proxy_usage_percent
-        color = 'green' if percent < 50 else 'orange' if percent < 80 else 'red'
-        return format_html(
-            '<span style="color: {};">{} / {} ({:.1f}%)</span>',
-            color,
-            obj.allocated_proxies_count,
-            obj.allocated_proxies_limit,
-            percent
-        )
+        percent = float(obj.proxy_usage_percent)
+        return f"{obj.allocated_proxies_count} / {obj.allocated_proxies_limit} ({percent:.1f}%)"
     proxy_allocation_display.short_description = 'Allocated Proxies'
     
     def proxy_usage_percent_display(self, obj):
