@@ -1,16 +1,14 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.urls import reverse
-from django.utils import timezone
-from .models import User, Proxy, ProxyUsage, ApiKey
+from .models import User, Subscription, ProxyPool, UsageLog, UserAllocatedProxy
 
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ['username', 'email', 'api_key', 'is_active', 'created_at']
+    list_display = ['username', 'email', 'api_key_display', 'is_active', 'created_at']
     list_filter = ['is_active', 'created_at']
     search_fields = ['username', 'email', 'api_key']
-    readonly_fields = ['created_at']
+    readonly_fields = ['created_at', 'api_key']
     ordering = ['-created_at']
     
     fieldsets = (
@@ -25,69 +23,86 @@ class UserAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def api_key_display(self, obj):
+        if obj.api_key:
+            return f"{obj.api_key[:8]}...{obj.api_key[-4:]}"
+        return "No key"
+    api_key_display.short_description = 'API Key'
 
 
-@admin.register(Proxy)
-class ProxyAdmin(admin.ModelAdmin):
-    list_display = ['name', 'user', 'host_port', 'is_active', 'created_at']
-    list_filter = ['is_active', 'created_at', 'user']
-    search_fields = ['name', 'host', 'user__username']
-    readonly_fields = ['created_at', 'updated_at']
-    ordering = ['-created_at']
+@admin.register(ProxyPool)
+class ProxyPoolAdmin(admin.ModelAdmin):
+    list_display = ['proxy_type', 'ip_port', 'country', 'city', 'usage_display', 'is_active', 'success_rate', 'last_used']
+    list_filter = ['proxy_type', 'is_active', 'country']
+    search_fields = ['ip_address', 'country', 'city']
+    readonly_fields = ['last_used', 'current_users']
+    ordering = ['-last_used']
     
     fieldsets = (
         ('Proxy Information', {
-            'fields': ('name', 'user', 'is_active')
+            'fields': ('proxy_type', 'is_active')
         }),
         ('Connection Details', {
-            'fields': ('host', 'port', 'username', 'password')
+            'fields': ('ip_address', 'port', 'country', 'city')
         }),
-        ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
+        ('Shared Proxy Settings', {
+            'fields': ('max_users', 'current_users'),
+            'description': 'For dedicated proxies, set max_users=1. For shared, set 10+.'
+        }),
+        ('Performance', {
+            'fields': ('success_rate', 'last_used')
         }),
     )
     
-    def host_port(self, obj):
-        return f"{obj.host}:{obj.port}"
-    host_port.short_description = 'Host:Port'
-
-
-@admin.register(ProxyUsage)
-class ProxyUsageAdmin(admin.ModelAdmin):
-    list_display = ['proxy', 'requests_count', 'bytes_sent', 'bytes_received', 'timestamp']
-    list_filter = ['timestamp', 'proxy__user']
-    search_fields = ['proxy__name', 'proxy__user__username']
-    readonly_fields = ['timestamp']
-    ordering = ['-timestamp']
+    def ip_port(self, obj):
+        return f"{obj.ip_address}:{obj.port}"
+    ip_port.short_description = 'IP:Port'
     
-    fieldsets = (
-        ('Usage Information', {
-            'fields': ('proxy', 'requests_count', 'bytes_sent', 'bytes_received')
-        }),
-        ('Timestamp', {
-            'fields': ('timestamp',)
-        }),
-    )
+    def usage_display(self, obj):
+        percent = (obj.current_users / obj.max_users * 100) if obj.max_users > 0 else 0
+        color = 'green' if percent < 70 else 'orange' if percent < 90 else 'red'
+        return format_html(
+            '<span style="color: {};">{} / {} users ({:.0f}%)</span>',
+            color,
+            obj.current_users,
+            obj.max_users,
+            percent
+        )
+    usage_display.short_description = 'Usage'
 
 
-@admin.register(ApiKey)
-class ApiKeyAdmin(admin.ModelAdmin):
-    list_display = ['name', 'user', 'key_display', 'is_active', 'created_at', 'last_used']
-    list_filter = ['is_active', 'created_at', 'last_used']
-    search_fields = ['name', 'key', 'user__username']
-    readonly_fields = ['created_at', 'last_used']
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = [
+        'user', 'plan', 'proxy_allocation_display', 
+        'is_active', 'expires_at'
+    ]
+    list_filter = ['plan', 'is_active', 'created_at']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['created_at', 'proxy_usage_percent_display', 'remaining_proxies']
     ordering = ['-created_at']
     
     fieldsets = (
-        ('API Key Information', {
-            'fields': ('name', 'user', 'is_active')
+        ('Subscription Info', {
+            'fields': ('user', 'plan', 'is_active', 'expires_at')
         }),
-        ('Key Details', {
-            'fields': ('key',)
+        ('Proxy Allocation (MVP - Shared)', {
+            'fields': (
+                'allocated_proxies_limit', 
+                'allocated_proxies_count',
+                'remaining_proxies',
+                'proxy_usage_percent_display',
+            ),
+            'description': 'Shared proxies - multiple users can use same proxy'
         }),
-        ('Usage', {
-            'fields': ('last_used',)
+        ('Data Limits (Future Gateway)', {
+            'fields': ('data_limit_gb', 'data_used_gb'),
+            'classes': ('collapse',),
+            'description': 'Will be used when Proxy Gateway is implemented'
+        }),
+        ('Connection Limits', {
+            'fields': ('concurrent_connections',)
         }),
         ('Timestamps', {
             'fields': ('created_at',),
@@ -95,11 +110,61 @@ class ApiKeyAdmin(admin.ModelAdmin):
         }),
     )
     
-    def key_display(self, obj):
-        if obj.key:
-            return f"{obj.key[:8]}...{obj.key[-4:]}"
-        return "No key"
-    key_display.short_description = 'API Key'
+    def proxy_allocation_display(self, obj):
+        percent = obj.proxy_usage_percent
+        color = 'green' if percent < 50 else 'orange' if percent < 80 else 'red'
+        return format_html(
+            '<span style="color: {};">{} / {} ({:.1f}%)</span>',
+            color,
+            obj.allocated_proxies_count,
+            obj.allocated_proxies_limit,
+            percent
+        )
+    proxy_allocation_display.short_description = 'Allocated Proxies'
+    
+    def proxy_usage_percent_display(self, obj):
+        return f"{float(obj.proxy_usage_percent):.1f}%"
+    proxy_usage_percent_display.short_description = 'Usage %'
+    
+    def remaining_proxies(self, obj):
+        return obj.remaining_proxies
+    remaining_proxies.short_description = 'Remaining'
+
+
+@admin.register(UsageLog)
+class UsageLogAdmin(admin.ModelAdmin):
+    list_display = ['user', 'proxy_id', 'request_count', 'data_used_mb', 'success', 'timestamp']
+    list_filter = ['success', 'timestamp']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['timestamp']
+    ordering = ['-timestamp']
+    
+    fieldsets = (
+        ('Usage Information', {
+            'fields': ('user', 'proxy_id', 'request_count', 'data_used_mb', 'success')
+        }),
+        ('Timestamp', {
+            'fields': ('timestamp',)
+        }),
+    )
+
+
+@admin.register(UserAllocatedProxy)
+class UserAllocatedProxyAdmin(admin.ModelAdmin):
+    list_display = ['user', 'proxy_pool', 'gateway_port', 'allocated_at']
+    list_filter = ['allocated_at', 'user']
+    search_fields = ['user__username', 'user__email', 'gateway_port']
+    readonly_fields = ['allocated_at']
+    ordering = ['-allocated_at']
+    
+    fieldsets = (
+        ('Allocation Info', {
+            'fields': ('user', 'proxy_pool', 'gateway_port')
+        }),
+        ('Timestamp', {
+            'fields': ('allocated_at',)
+        }),
+    )
 
 
 # Customize admin site
