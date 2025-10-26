@@ -18,6 +18,10 @@ class User(models.Model):
     def __str__(self):
         return f"{self.username} ({self.email})"
 
+PROXY_SCHEMES = (
+    (0, "socks5"),
+    (1, "http"),
+)
 
 class ProxyPool(models.Model):
     """Maps to FastAPI's proxy_pools table"""
@@ -32,6 +36,11 @@ class ProxyPool(models.Model):
     proxy_type = models.CharField(max_length=20, choices=PROXY_TYPES)
     ip_address = models.CharField(max_length=255)
     port = models.IntegerField()
+
+    scheme = models.PositiveSmallIntegerField(choices=PROXY_SCHEMES, default=0)
+    username = models.CharField(max_length=89)
+    password = models.CharField(max_length=66)
+
     country = models.CharField(max_length=10, blank=True)
     city = models.CharField(max_length=100, blank=True)
     is_active = models.BooleanField(default=True)
