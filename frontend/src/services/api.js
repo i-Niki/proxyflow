@@ -168,7 +168,7 @@ class ApiClient {
   // ============================================
 
   /**
-   * Get proxies
+   * Get proxies (LEGACY)
    * POST /proxy/get
    */
   async getProxies(proxyRequest) {
@@ -183,6 +183,34 @@ class ApiClient {
         'X-API-Key': this.apiKey,
       },
       skipAuth: true, // Using API key instead
+    });
+  }
+
+  /**
+   * Allocate all proxies for user's plan
+   * POST /proxy/allocate
+   */
+  async allocateProxies() {
+    return this.request('/proxy/allocate', {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get list of allocated proxies
+   * GET /proxy/list
+   */
+  async listAllocatedProxies() {
+    return this.request('/proxy/list');
+  }
+
+  /**
+   * Release a proxy (stub - not implemented in MVP)
+   * DELETE /proxy/{id}/release
+   */
+  async releaseProxy(proxyId) {
+    return this.request(`/proxy/${proxyId}/release`, {
+      method: 'DELETE',
     });
   }
 
