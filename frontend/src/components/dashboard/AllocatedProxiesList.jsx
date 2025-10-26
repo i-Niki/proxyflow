@@ -49,8 +49,12 @@ export default function AllocatedProxiesList({ onAllocate }) {
   };
 
   const formatProxyString = (proxy) => {
-    // Format: username_vport:api_key@host:port (e.g., alice_10001:pk_abc123@localhost:10001)
-    return `${proxy.username}_${proxy.gateway_port}:${proxy.password}@${proxy.gateway_ip}:${proxy.gateway_port}`;
+    // Format: username_vport:api_key@host:physical_port
+    // Example: alice_10000:pk_abc123@localhost:8080
+    // - alice_10000: username + virtual port (for Gateway to identify which proxy to use)
+    // - pk_abc123: API key for authentication
+    // - localhost:8080: Gateway physical address (only port 8080 is listening)
+    return `${proxy.username}_${proxy.gateway_port}:${proxy.password}@${proxy.gateway_ip}:${proxy.gateway_listen_port}`;
   };
 
   const copyToClipboard = (text, index) => {
@@ -214,16 +218,16 @@ export default function AllocatedProxiesList({ onAllocate }) {
       <div className="mt-4 p-3 bg-blue-500/5 border border-blue-500/20 rounded-lg">
         <p className="text-xs text-blue-400">
           <strong>Usage:</strong> Use these credentials with any proxy-enabled application.
-          Format: <code className="text-blue-300">username_vport:api_key@host:port</code>
+          Format: <code className="text-blue-300">username_vport:api_key@host:8080</code>
         </p>
         <p className="text-xs text-slate-500 mt-1">
-          Example: <code className="text-slate-400">curl -x {proxies[0] ? formatProxyString(proxies[0]) : 'username_10001:pk_xxx@host:port'} https://api.ipify.org</code>
+          Example: <code className="text-slate-400">curl -x {proxies[0] ? formatProxyString(proxies[0]) : 'username_10000:pk_xxx@localhost:8080'} https://2ip.ru</code>
         </p>
       </div>
 
       <div className="mt-4 p-3 bg-green-500/5 border border-green-500/20 rounded-lg">
         <p className="text-xs text-green-400">
-          <strong>✓ Ready to use:</strong> Gateway server is running. Connect using HTTP CONNECT protocol on the specified ports.
+          <strong>✓ Ready to use:</strong> Gateway listens on port 8080. Virtual port (10000+) is encoded in username for proxy routing.
         </p>
       </div>
     </Card>

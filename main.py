@@ -221,7 +221,8 @@ class UpdateSubscriptionRequest(BaseModel):
 class AllocatedProxyResponse(BaseModel):
     id: int
     gateway_ip: str
-    gateway_port: int
+    gateway_port: int  # Virtual port (encoded in username, e.g. 10000)
+    gateway_listen_port: int  # Physical port where Gateway listens (8080)
     username: str
     password: str
     allocated_at: datetime
@@ -582,8 +583,9 @@ def allocate_proxies(
     next_port = 10000 if not last_allocation else last_allocation.gateway_port + 1
 
     allocated = []
-    # Get gateway IP from environment (for Docker: "gateway", for local: "localhost")
+    # Get gateway IP and port from environment
     gateway_ip = os.getenv("GATEWAY_HOST", "localhost")
+    gateway_listen_port = int(os.getenv("GATEWAY_PORT", "8080"))
 
     for i, proxy in enumerate(available_proxies):
         gateway_port = next_port + i
@@ -603,7 +605,8 @@ def allocate_proxies(
         allocated.append({
             "id": proxy.id,
             "gateway_ip": gateway_ip,
-            "gateway_port": gateway_port,
+            "gateway_port": gateway_port,  # Virtual port for username
+            "gateway_listen_port": gateway_listen_port,  # Physical port (8080)
             "username": current_user.username,
             "password": current_user.api_key,
             "allocated_at": now_utc(),
@@ -633,8 +636,9 @@ def list_allocated_proxies(
     if not allocations:
         return []
 
-    # Get gateway IP from environment (for Docker: "gateway", for local: "localhost")
+    # Get gateway IP and port from environment
     gateway_ip = os.getenv("GATEWAY_HOST", "localhost")
+    gateway_listen_port = int(os.getenv("GATEWAY_PORT", "8080"))
 
     result = []
     for alloc in allocations:
@@ -642,7 +646,8 @@ def list_allocated_proxies(
         result.append({
             "id": alloc.id,
             "gateway_ip": gateway_ip,
-            "gateway_port": alloc.gateway_port,
+            "gateway_port": alloc.gateway_port,  # Virtual port for username
+            "gateway_listen_port": gateway_listen_port,  # Physical port (8080)
             "username": current_user.username,
             "password": current_user.api_key,
             "allocated_at": alloc.allocated_at,
